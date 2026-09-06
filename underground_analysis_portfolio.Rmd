@@ -1,0 +1,263 @@
+---
+title: "Where Should the Tube Get Air-Conditioning First? A Statistical Case for Prioritisation"
+author: "Parnika Raina"
+date: "2025-11-06"
+output: html_document
+---
+## Business Problem
+
+London Underground lines get hot, especially in summer, and there's been
+talk about installing air-cooling systems to help with that. Doing it
+across every line at once isn't realistic, so before spending the money
+somewhere needs to go first - the question is where.
+
+I use monthly average temperature data across the lines to work that out:
+which line actually runs hottest, whether that difference holds up as
+something real or could just be chance, and whether it still holds up
+specifically in summer, since that's when it actually matters for
+passengers.
+
+This project is divided into two sections. Section 1 presents the technical analysis, including the code and statistical tests. Section 2 explains the same findings in plain language, in the way I would present them to a manager or someone without a technical or statistical background.
+
+
+## Section 1
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(tidyverse)
+library(gridExtra)
+library(kableExtra)
+```
+
+
+## Data Dictionary
+
+This data is provided by London Underground Lines. The variables are described in the table below
+
+Variable | Description
+------------- | -------------
+ID| Unique identifier for the temprature recorded for the underground line 
+Year | Year when the temperature was recorded for the underground Line 
+Month | Month when temperature recorded for thae underground Line 
+Line | The underground line's name whose temprature was measured
+Temp | The monthly average temprature of the underground line
+
+## Data Integrity/Quality Check and it's Visualisation
+Before drawing any conclusions, it's better to check the data itself to see if there are
+any missing values, and does the temperature readings look realistic?
+
+```{r}
+
+#reading the data
+data <- read_csv("Underground.csv")
+
+
+#Checking the missing values
+summarise_all(data,~sum(is.na(.x)))
+
+
+#Creating a boxplot of the Temp column to see its distribution
+ggplot()+ geom_boxplot(data, mapping =aes(Temp))
+
+
+
+#Temperature distribution by underground line
+ggplot(data, aes(x = Temp, fill = Line)) +
+  geom_histogram(bins = 30, alpha = 0.7) +
+  facet_wrap(~Line, scales = "free_y") +
+  labs(title = "Temperature Distribution by Underground Line",
+       x = "Temperature (°C)",
+       y = "Frequency") +
+  theme_minimal() +
+  theme(legend.position = "none")
+
+
+
+
+
+
+
+
+```
+
+## Summary Table While Filtering the Outliers, Without Excluding the Subsequent Analysis
+A handful of readings fall outside any plausible range for an Underground
+line's monthly average temperature, so those get filtered out before
+summarising - readings are kept between 5°C and 100°C, based on realistic
+operational conditions, without dropping any line from the analysis yet.
+```{r}
+#Creating a summary table while filtering the outliers and unrealistic data points
+(summary <- data %>%
+   filter(Temp <= 100, Temp>=5) %>%                        
+   group_by(Line) %>%
+   summarise(
+     Temp_mean = mean(Temp, na.rm = TRUE),
+     SD_temp = sd(Temp, na.rm = TRUE),
+     Lowest_temp = min(Temp, na.rm = TRUE),
+     Highest_temp = max(Temp, na.rm = TRUE)
+  ))
+  
+
+```
+## Excluding Sub_Surface Lines from Subsequent Analysis While Filtering the Outliers.
+
+
+The dataset groups several older lines together as "Sub-Surface Lines" -
+these are unusual because they're built much closer to the surface than the
+rest of the network, which affects their temperature profile in a way
+that isn't really comparable to the deep-level lines this analysis is
+trying to prioritise between. They're excluded from here on.
+```{r}
+
+#Creating a summary table while filtering the outliers,unrealistic data points and sub_surface lines
+
+(Final_analysis <- data %>%
+  filter(Temp <= 100, Temp>=5) %>%                        
+  filter(Line != "Sub-surface_lines") %>%       
+  group_by(Line) %>% 
+  summarise(
+    Temp_mean = mean(Temp, na.rm = TRUE),
+    SD_temp = sd(Temp, na.rm = TRUE),
+    Lowest_temp = min(Temp, na.rm = TRUE),
+    Highest_temp = max(Temp, na.rm = TRUE)
+  ))
+
+
+```
+
+
+
+
+## Ploting the Distribution of Temperature Across All Years in the Dataset
+```{r}
+
+#Filtering the data
+
+Final_analysis_filtered <- data %>%
+  filter(Temp <= 100, Temp>=5, Line != "Sub-surface_lines")
+
+
+#Creating the boxplot,adding red dots for mean temperature and adding error bars with green lines
+ggplot(Final_analysis_filtered, aes(x = Line, y = Temp)) +
+  geom_boxplot(width = 0.6, fill = "lightblue", colour = "darkblue", alpha = 0.5) +
+  geom_point(data = Final_analysis, aes(x = Line, y = Temp_mean), 
+             color = "red", size = 3, inherit.aes = FALSE) +
+  geom_errorbar(data = Final_analysis, aes(x = Line, ymin = Temp_mean - SD_temp, 
+                                      ymax = Temp_mean + SD_temp),
+                width = 0.2, color = "darkgreen", inherit.aes = FALSE) +
+  labs(title = "Temperature Distribution by Underground Line",
+       x = "Underground Line",
+       y = "Temperature (°C)") +
+  theme_minimal() +
+  theme(legend.position = "none")
+
+```
+
+Bakerloo and Central visibly run hottest on average. Before treating that as
+a real difference worth acting on, it's worth testing it properly rather
+than just comparing two averages.
+
+## Performing a T-test to Compare the Temperature on the Bakerloo Line to the Central Line
+
+```{r}
+
+#Filtering the dataset
+Bakerloo_comp_central <- data%>%
+  filter(Line%in%c("Bakerloo","Central"))%>%
+           filter(Temp <= 100, Temp>=5)
+
+#Performing the t-test
+t.test(Temp ~ Line, data= Bakerloo_comp_central)
+ 
+
+```
+Since, there is a significant difference in the temperature between bakerloo line and central line we reject the null hypothesis is rejected.
+
+
+## Performing T-test to Compare the Temperature on the Bakerloo Line to the Central Line Only in the Summer Months 
+
+```{r}
+
+#Filtering the dataset
+Bakerloo_summer_comp_Central <- Bakerloo_comp_central%>%
+  filter(Month%in% c("May","June","July","August"))%>%
+  filter(Temp <= 100, Temp>=5)
+
+#Performing the t-test
+t.test(Temp~ Line, data= Bakerloo_summer_comp_Central)
+
+```
+Since,there is no significant difference during summer months,we fail to reject the null hypothesis.
+
+
+
+
+## Section 2
+Everything above is the technical work, useful if you want to check the
+method. What follows is the same findings written the other way round no
+code, no statistical terms left unexplained, just what was found and what
+it means for where to put the pilot. This is roughly what I'd actually share with
+a manager.
+
+## Introduction
+This report presents the results of the analyses requested to decide where to install a new air-cooling system on the London Underground Lines. This used the data of monthly average temperatures from the London Underground Lines. The data set includes older London Underground Lines, these Lines are unusual in that they are built closer to the surface than the other lines these are grouped together and called “Sub-Surface Lines”, They are removed from the subsequent analysis.
+
+
+
+## Summary Table
+
+We begin with summaries that shows the following for each London Underground line where temperature levels were measured Excluding sub-surface lines from subsequent analysis while filtering the outliers(Summary table 1)
+
+
+```{r echo=FALSE}
+Final_analysis%>%
+kbl(caption = "Summary Table 1") %>%
+kable_styling()
+
+```
+This summary table summarise the descriptive statistics for each London underground. Temperature between 5°C and 100°C were used in the analysis since this criteria was developed on the basis of realistic operational conditions. Based on the historical data Bakerloo line and Central line consistently experienced higher mean temperature than the other underground lines. With 26.82°C the Bakerloo line had the highest mean temperature while having the standard deviation of 2.61. Following this, Central line having second highest mean temperature 26.11°C and standard deviation of 2.86. While,waterloo_and_city showing the lowest mean temperature 21.02°C while having the standard deviation 2.95.
+
+
+Sub-Surface Lines have excluding from the subsequent analysis. Since these are older London Underground Lines and these Lines were unusual in that they are built closer to the surface than the other lines these are grouped together and called “Sub-Surface Lines”
+
+
+
+
+
+
+## Distribution of Temperature Across All Years in the Dataset 
+
+```{r echo=FALSE}
+Final_analysis_filtered <- data %>%
+  filter(Temp <= 100, Temp>=5, Line != "Sub-surface_lines")
+
+
+
+ggplot(Final_analysis_filtered, aes(x = Line, y = Temp)) +
+  geom_boxplot(width = 0.6, fill = "lightblue", colour = "darkblue", alpha = 0.5) +
+  geom_point(data = Final_analysis, aes(x = Line, y = Temp_mean), 
+             color = "red", size = 3, inherit.aes = FALSE) +
+  geom_errorbar(data = Final_analysis, aes(x = Line, ymin = Temp_mean - SD_temp, 
+                                      ymax = Temp_mean + SD_temp),
+                width = 0.2, color = "darkgreen", inherit.aes = FALSE) +
+  labs(x = "Underground Line",
+       y = "Temperature (°C)") +
+  theme_minimal() +
+  theme(legend.position = "none")
+
+
+```
+
+This boxplot is the visualization of the temperature distribution of the London underground lines(excluding Sub-Surface Lines) here the red point indicates the mean temperature, green error bars represents ± Standard deviation from the mean.
+
+## Statistical Testing/T-test 
+
+Barkeloo lines and central lines temperatures were compared by conducting t-tests. The first t-test performed with (p-value=0.0303),(t=2.1772) on barkeloo lines and central lines was to compare their temperature across all the months, bakerloo line reported notably higher temperatures(mean = 26.82°C) compared to central line(mean = 26.11°C).
+
+In addition to this we performed a t-test on on Bakerloo lines and central lines was to compare their temperature in the summer months with(p-value=0.8748),(t=0.15803), There was just little variation between the barkeloo line(mean = 28.74°C) and central line(mean = 28.68°C).
+
+
+## Recommendation
+The analysis suggests that the pilot air-cooling system should be installed on the Bakerloo line. It has the highest mean temperature of all the Underground lines at 26.82°C and an average summer temperature of 28.74°C, with individual readings reaching as high as 32.41°C. Installing the system on one of the hottest lines would allow it to be tested under the most difficult conditions, while also targeting a line where passengers are likely to experience the greatest discomfort.
+
+However, the difference between the Bakerloo and Central lines during summer is not large enough to be statistically significant in this dataset. Even so, the Bakerloo line still has the highest overall average temperature and some of the most extreme individual readings on the network. For this reason, it remains the strongest choice for the pilot.
+
